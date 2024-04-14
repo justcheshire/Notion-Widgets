@@ -1,0 +1,360 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8">
+  <title>Minuteur</title>
+  <script>
+    let totalSecondsToRun = 0;
+    let currentSeconds = 0;
+    let isRunning = false;
+    let isSoundPlaying = false;
+
+    let timeoutInterval = 0;
+    let expectedCallTime = null;
+    let timeoutId = null;
+
+    let isSoundAllowed = true;
+
+    // Callbacks
+
+    function onTimeInput(event) {
+      if (!event) return;
+
+      displayTimes(splitInput(event.target.value));
+    }
+
+    function onInputBlur(event) {
+      if (isRunning) return;
+
+      // Determine how long to run the timer for
+      let times = splitInput(event.target.value);
+      calculateSecondsToRun(times);
+      // From the total seconds, sanitise the time into something readable. I.e. 90m -> 1h30m
+      times = sanitiseTime(totalSecondsToRun);
+      displayTimes(times)
+
+      if (totalSecondsToRun > 0) {
+        let updatedValue = `${times.hours}`.padStart(2, "0") + `${times.minutes}`.padStart(2, "0") + `${times.seconds}`.padStart(2, "0");
+        updatedValue = updatedValue.replaceAll(/^0+/g, "");
+        event.target.value = updatedValue;
+      } else {
+        event.target.value = "";
+      }
+    }
+
+    function onInputKeyUp(event) {
+      if (event.keyCode === 13 && !isRunning) {
+        onInputBlur(event);
+        toggleTimer();
+      }
+    }
+
+    function toggleTimer() {
+      if (isRunning || isSoundPlaying) {
+        timerOff();
+      } else {
+        timerOn();
+      }
+    }
+
+    function restartTimer() {
+      if (isRunning) {
+        timerOff();
+      }
+      currentSeconds = totalSecondsToRun;
+      displayTimes(sanitiseTime(currentSeconds));
+    }
+
+    function toggleSound() {
+      isSoundAllowed = !isSoundAllowed;
+      if (!isSoundAllowed) {
+        stopSound();
+        if (isSoundPlaying) {
+          isSoundPlaying = false;
+          isRunning = false;
+          updateUi();
+        }
+      }
+      updateUi();
+    }
+
+    function clearInput() {
+      const inputElement = document.querySelector("#timeInput");
+      inputElement.value = "";
+      displayTimes({});
+    }
+
+    // Utility
+
+    function reverseString(str) {
+      return str.split("").reduce((acc, char) => char + acc, "");
+    }
+
+    function splitInput(input) {
+      const reversedInput = reverseString(input);
+      const times = reversedInput?.match(/.{1,2}/g)?.map(reverseString)?.map(val => parseInt(val)) || [];
+      return {seconds: times?.[0] || 0, minutes: times?.[1] || 0, hours: times?.[2] || 0};
+    }
+
+    function calculateSecondsToRun(times) {
+      totalSecondsToRun = (((times.hours * 60) + times.minutes) * 60) + times.seconds;
+      currentSeconds = totalSecondsToRun;
+    }
+
+    function sanitiseTime(timeInSeconds) {
+      const times = {};
+
+      times.seconds = timeInSeconds % 60;
+      timeInSeconds = (timeInSeconds - times.seconds) / 60;
+
+      times.minutes = timeInSeconds % 60;
+      timeInSeconds = (timeInSeconds - times.minutes) / 60
+
+      times.hours = timeInSeconds;
+
+      return times;
+    }
+
+    function displayTimes({hours = 0, minutes = 0, seconds = 0}) {
+      const secondsElement = document.querySelector("#seconds");
+      secondsElement.innerText = `${seconds}`.padStart(2, "0") + "s";
+
+      const minutesElement = document.querySelector("#minutes");
+      minutesElement.innerText = `${minutes}`.padStart(2, "0") + "m";
+
+      const hoursElement = document.querySelector("#hours");
+      hoursElement.innerText = `${hours}`.padStart(2, "0") + "h";
+    }
+
+    // Timer Methods
+
+    function timerOff() {
+      clearTimeout(timeoutId);
+      stopSound();
+      isRunning = false;
+      isSoundPlaying = false;
+      updateUi();
+    }
+
+    function timerOn() {
+      if (currentSeconds > 0) {
+        // Start the timer
+        timeoutInterval = 1000;
+        expectedCallTime = Date.now() + timeoutInterval;
+        timeoutId = setTimeout(step, timeoutInterval);
+        isRunning = true;
+        updateUi();
+      }
+    }
+
+    function step() {
+      currentSeconds -= 1;
+      displayTimes(sanitiseTime(currentSeconds));
+
+      if (currentSeconds <= 0) {
+        if (isSoundAllowed) {
+          playSound();
+          isSoundPlaying = true;
+        }
+        isRunning = false;
+        updateUi();
+      } else if (isRunning) {
+        const dt = Date.now() - expectedCallTime; // the drift (positive for overshooting)
+        expectedCallTime += timeoutInterval;
+
+        timeoutId = setTimeout(step, Math.max(0, timeoutInterval - dt));
+      }
+    }
+
+    function playSound() {
+      const audioElement = document.querySelector("#timeAudio");
+      audioElement.volume = 0.5;
+      audioElement.play();
+    }
+
+    function stopSound() {
+      const audioElement = document.querySelector("#timeAudio");
+      audioElement.pause();
+    }
+
+    function updateUi() {
+      // Update the toggle button
+      const buttonElement = document.querySelector("#toggleButton");
+      buttonElement.innerText = isRunning || isSoundPlaying ? "ARRÊTER" : "DÉMARRER";
+
+      // Enable or disable the input
+      const inputElement = document.querySelector("#timeInput");
+      inputElement.disabled = isRunning || isSoundPlaying;
+
+      // Set the volume icon as appropriate
+      const soundOnElement = document.querySelector("#soundOn");
+      const soundOffElement = document.querySelector("#soundOff");
+      if (isSoundAllowed) {
+        soundOnElement.classList.remove("hidden")
+        soundOffElement.classList.add("hidden")
+      } else {
+        soundOnElement.classList.add("hidden")
+        soundOffElement.classList.remove("hidden")
+      }
+    }
+  </script>
+  <style>
+    /* Element styles */
+    body {
+      font-family: "Segoe UI", Arial, sans-serif;
+    }
+
+    input {
+      border: none;
+      text-align: right;
+      position: absolute;
+      top: 1rem;
+      right: 1rem;
+      left: 1rem;
+      bottom: 1rem;
+      background-color: transparent;
+      color: transparent;
+      caret-color: #4299e1;
+    }
+    input:focus {
+      outline: none;
+      border-bottom: 1px solid #4299e1;
+    }
+
+    .relative {
+      position: relative
+    }
+
+    .flex {
+      display: flex;
+    }
+    .flex-row {
+      flex-direction: row;
+    }
+    .flex-col {
+      flex-direction: column;
+    }
+
+    .w-full {
+      width: 100%;
+    }
+
+    .ml-auto {
+      margin-left: auto;
+    }
+    .mr-auto {
+      margin-right: auto;
+    }
+    .m-0 {
+      margin: 0
+    }
+    .mr-4 {
+      margin-right: 1rem;
+    }
+
+    .p-4 {
+      padding: 1rem
+    }
+
+    .hidden {
+      display: none;
+    }
+
+    .overflow-none {
+      overflow: hidden
+    }
+
+    .btn-primary {
+      background-color: #4299e1;
+      cursor: pointer;
+      color: white;
+      padding: 0.5rem 1rem;
+      border-radius: 0.25rem;
+      border: 0
+    }
+    .btn-primary:hover {
+      background-color: #2b6cb0
+    }
+
+    .btn-transparent {
+      background-color: transparent;
+      border: 0;
+      border-radius: 0.25rem;
+      padding: 0.5rem;
+    }
+    .btn-transparent:hover {
+      background-color: rgba(0, 0, 0, 0.1);
+    }
+
+    .border {
+      border-width: 1px;
+      border-style: solid;
+    }
+    .border-gray-100 {
+      border-color: rgba(0, 0, 0, 0.1)
+    }
+
+    .time-field {
+      font-size: 4rem;
+      font-weight: bold;
+    }
+
+    .icon {
+      width: 1.25em;
+      height: 1.25em;
+      vertical-align: -0.125em;
+    }
+
+    .rounded {
+      border-radius: 0.25rem;
+    }
+  </style>
+</head>
+
+<body>
+  <div class="flex flex-row">
+    <div class="flex flex-col border border-gray-100 rounded overflow-none">
+      <div class="p-4 flex flex-row relative">
+        <span id="hours" class="mr-4 time-field">00h</span>
+        <span id="minutes" class="mr-4 time-field">00m</span>
+        <span id="seconds" class="time-field">00s</span>
+
+        <input id="timeInput" type="text" pattern="\d" class="time-field" oninput="onTimeInput(event)"
+               onkeyup="onInputKeyUp(event)" onblur="onInputBlur(event)"/>
+
+        <audio id="timeAudio" loop="loop">
+          <source src="" type="audio/ogg">
+          <source src="" type="audio/mp3">
+        </audio>
+      </div>
+
+      <hr class="w-full m-0 border-gray-100"/>
+
+      <div class="p-4 flex flex-row">
+        <button id="toggleButton" class="btn-primary mr-4" onclick="toggleTimer()">DÉMARRER</button>
+        <button id="restartButton" class="btn-primary mr-auto" onclick="restartTimer()">RESET</button>
+
+        <button id="soundButton" class="btn-transparent" onclick="toggleSound()">
+          <svg id="soundOn" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 512" class="icon">
+            <!--!Font Awesome Free 6.5.1 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free Copyright 2024 Fonticons, Inc.-->
+            <path fill="currentColor"
+                  d="M533.6 32.5C598.5 85.2 640 165.8 640 256s-41.5 170.7-106.4 223.5c-10.3 8.4-25.4 6.8-33.8-3.5s-6.8-25.4 3.5-33.8C557.5 398.2 592 331.2 592 256s-34.5-142.2-88.7-186.3c-10.3-8.4-11.8-23.5-3.5-33.8s23.5-11.8 33.8-3.5zM473.1 107c43.2 35.2 70.9 88.9 70.9 149s-27.7 113.8-70.9 149c-10.3 8.4-25.4 6.8-33.8-3.5s-6.8-25.4 3.5-33.8C475.3 341.3 496 301.1 496 256s-20.7-85.3-53.2-111.8c-10.3-8.4-11.8-23.5-3.5-33.8s23.5-11.8 33.8-3.5zm-60.5 74.5C434.1 199.1 448 225.9 448 256s-13.9 56.9-35.4 74.5c-10.3 8.4-25.4 6.8-33.8-3.5s-6.8-25.4 3.5-33.8C393.1 284.4 400 271 400 256s-6.9-28.4-17.7-37.3c-10.3-8.4-11.8-23.5-3.5-33.8s23.5-11.8 33.8-3.5zM301.1 34.8C312.6 40 320 51.4 320 64V448c0 12.6-7.4 24-18.9 29.2s-25 3.1-34.4-5.3L131.8 352H64c-35.3 0-64-28.7-64-64V224c0-35.3 28.7-64 64-64h67.8L266.7 40.1c9.4-8.4 22.9-10.4 34.4-5.3z"/>
+          </svg>
+          <svg id="soundOff" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 576 512" class="icon hidden">
+            <!--!Font Awesome Free 6.5.1 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free Copyright 2024 Fonticons, Inc.-->
+            <path fill="currentColor"
+                  d="M301.1 34.8C312.6 40 320 51.4 320 64V448c0 12.6-7.4 24-18.9 29.2s-25 3.1-34.4-5.3L131.8 352H64c-35.3 0-64-28.7-64-64V224c0-35.3 28.7-64 64-64h67.8L266.7 40.1c9.4-8.4 22.9-10.4 34.4-5.3zM425 167l55 55 55-55c9.4-9.4 24.6-9.4 33.9 0s9.4 24.6 0 33.9l-55 55 55 55c9.4 9.4 9.4 24.6 0 33.9s-24.6 9.4-33.9 0l-55-55-55 55c-9.4 9.4-24.6 9.4-33.9 0s-9.4-24.6 0-33.9l55-55-55-55c-9.4-9.4-9.4-24.6 0-33.9s24.6-9.4 33.9 0z"/>
+          </svg>
+        </button>
+        <button id="clearButton" class="btn-transparent" onclick="clearInput()">
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 384 512" class="icon">
+            <!--!Font Awesome Free 6.5.2 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free Copyright 2024 Fonticons, Inc.-->
+            <path fill="currentColor"
+                  d="M342.6 150.6c12.5-12.5 12.5-32.8 0-45.3s-32.8-12.5-45.3 0L192 210.7 86.6 105.4c-12.5-12.5-32.8-12.5-45.3 0s-12.5 32.8 0 45.3L146.7 256 41.4 361.4c-12.5 12.5-12.5 32.8 0 45.3s32.8 12.5 45.3 0L192 301.3 297.4 406.6c12.5 12.5 32.8 12.5 45.3 0s12.5-32.8 0-45.3L237.3 256 342.6 150.6z"/>
+          </svg>
+        </button>
+      </div>
+    </div>
+  </div>
+</body>
+</html>
